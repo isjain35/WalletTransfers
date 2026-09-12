@@ -2,6 +2,7 @@ package com.exercise.WalletTransfers.controller;
 
 import com.exercise.WalletTransfers.model.dto.AuthRequest;
 import com.exercise.WalletTransfers.service.AuthService;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,12 +18,12 @@ public class AuthController {
 	AuthService authService;
 
 	@PostMapping("/signup")
-	public ResponseEntity<Object> signup(@RequestBody AuthRequest request) {
+	public ResponseEntity<Object> signup(@Valid @RequestBody AuthRequest request) {
 		return authService.signup(request).getResponseEntity();
 	}
 
 	@PostMapping("/login")
-	public ResponseEntity<Object> login(@RequestBody AuthRequest request) {
+	public ResponseEntity<Object> login(@Valid @RequestBody AuthRequest request) {
 		return authService.login(request).getResponseEntity();
 	}
 }

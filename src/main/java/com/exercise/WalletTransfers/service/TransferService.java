@@ -21,6 +21,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 
 @Slf4j
 @Service
@@ -51,6 +52,10 @@ public class TransferService {
 	private TransferResponse transferAmount(TransferRequest request, Long senderId, String senderUsername) {
 		TransferResponse transferResponse = new TransferResponse();
 		Transaction transaction = new Transaction();
+
+		if(senderUsername.equalsIgnoreCase(request.getSendTo())) {
+			throw new WalletException(HttpStatus.BAD_REQUEST, "Self transfer is not allowed.");
+		}
 
 		logTransfer(DomainEventLogger.TRANSFER_CREATED, request, senderUsername);
 
