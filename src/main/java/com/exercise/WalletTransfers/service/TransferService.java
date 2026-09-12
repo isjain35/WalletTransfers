@@ -1,6 +1,8 @@
 package com.exercise.WalletTransfers.service;
 
 import com.exercise.WalletTransfers.dao.WalletDao;
+import com.exercise.WalletTransfers.logging.DomainEvent;
+import com.exercise.WalletTransfers.logging.DomainEventLogger;
 import com.exercise.WalletTransfers.model.dto.ResponseDTO;
 import com.exercise.WalletTransfers.model.dto.TransferRequest;
 import com.exercise.WalletTransfers.model.dto.TransferResponse;
@@ -12,6 +14,8 @@ import com.exercise.WalletTransfers.repository.TransactionRepository;
 import com.exercise.WalletTransfers.repository.WalletRepository;
 import com.exercise.WalletTransfers.utils.ResponseMessages;
 import com.exercise.WalletTransfers.utils.TransferStatus;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -29,41 +33,54 @@ public class TransferService {
 	WalletDao walletDao;
 	@Autowired
 	TransactionRepository transactionRepository;
+	@Autowired
+	DomainEventLogger domainEventLogger;
+	@Autowired
+	TransactionSaveHelper transactionSaveHelper;
 
 	@Transactional
 	public ResponseDTO createTransfer(TransferRequest request, User fromUser) {
 		ResponseDTO responseDTO = new ResponseDTO();
-		TransferResponse transferResponse = transferAmount(request, fromUser.getId());
+		TransferResponse transferResponse = transferAmount(request, fromUser.getId(), fromUser.getUsername());
 		responseDTO.setResponseObject(transferResponse);
 		responseDTO.setHttpStatus(HttpStatus.OK);
 		return responseDTO;
 	}
 
-	private TransferResponse transferAmount(TransferRequest request, Long senderId) {
+	private TransferResponse transferAmount(TransferRequest request, Long senderId, String senderUsername) {
 		TransferResponse transferResponse = new TransferResponse();
 		Transaction transaction = new Transaction();
+
+		logTransfer(DomainEventLogger.TRANSFER_CREATED, request, senderUsername);
+
 		Wallet senderWallet = walletRepository.getByUserId(senderId);
 		Wallet receiverWallet = walletRepository.getByUserUsername(request.getSendTo());
 
 		if (senderWallet == null) {
 			transferResponse.setMessage(ResponseMessages.TRANSFER_FAILED_SENDER_WALLET_NOT_REGISTERED);
+			logDeclined(request, senderUsername, null, null, transferResponse.getMessage());
 			throw new WalletException(HttpStatus.BAD_REQUEST, transferResponse);
 		}
 		if (receiverWallet == null) {
 			transferResponse.setMessage(ResponseMessages.TRANSFER_FAILED_RECIPIENT_WALLET_NOT_REGISTERED);
+			logDeclined(request, senderUsername, senderWallet.getId(), request.getSendTo(), transferResponse.getMessage());
 			throw new WalletException(HttpStatus.BAD_REQUEST, transferResponse);
 		}
 
 		int debitWalletCount = walletDao.debitWallet(senderWallet.getId(), request.getAmountPaise());
 		if (debitWalletCount != 0) {
+			logWalletEntry(DomainEventLogger.MARKED_FOR_DEBIT, request, senderUsername, senderWallet.getId());
 			int creditWalletCount = walletDao.creditWallet(receiverWallet.getId(), request.getAmountPaise());
+
 			if (creditWalletCount != 0) {
+				logWalletEntry(DomainEventLogger.MARKED_FOR_CREDIT, request, senderUsername, receiverWallet.getId());
 				transaction.setStatus(TransferStatus.SUCCESSFUL);
 				transaction.setMessage(ResponseMessages.TRANSFER_SUCCESSFUL);
 				transferResponse.setStatus(transaction.getStatus());
 				transferResponse.setMessage(transaction.getMessage());
 			} else {
 				transferResponse.setMessage(ResponseMessages.TRANSFER_FAILED_RECIPIENT_WALLET_NOT_REGISTERED);
+				logDeclined(request, senderUsername, receiverWallet.getId(), request.getSendTo(), transferResponse.getMessage());
 				throw new WalletException(HttpStatus.BAD_REQUEST, transferResponse);
 			}
 		} else {
@@ -71,6 +88,7 @@ public class TransferService {
 			transaction.setMessage(ResponseMessages.TRANSFER_FAILED_INSUFFICIENT_BALANCE);
 			transferResponse.setStatus(transaction.getStatus());
 			transferResponse.setMessage(transaction.getMessage());
+			logDeclined(request, senderUsername, senderWallet.getId(), request.getSendTo(), ResponseMessages.TRANSFER_FAILED_INSUFFICIENT_BALANCE);
 		}
 
 		try {
@@ -78,14 +96,17 @@ public class TransferService {
 			transaction.setAmountPaise(request.getAmountPaise());
 			transaction.setFromWallet(senderWallet);
 			transaction.setToWallet(receiverWallet);
-			transactionRepository.save(transaction);
+			transactionSaveHelper.saveAndFlushIsolated(transaction);
+			logTransfer(DomainEventLogger.TRANSFER_COMPLETED, request, senderUsername);
 		} catch (DataIntegrityViolationException e) {
 			log.error("Transfer already exists for unique_reference: {} for userId: {}", request.getUniqueReference(), senderId);
-			transactionRepository.getByUniqueReferenceAndFromWalletUserId(request.getUniqueReference(), senderId);
-			transferResponse.setSentTo(transaction.getToWallet().getUser().getUsername());
-			transferResponse.setAmountPaise(transaction.getAmountPaise());
-			transferResponse.setStatus(transaction.getStatus());
-			transferResponse.setMessage(transaction.getMessage());
+
+			Transaction existingTransaction = transactionRepository.getByUniqueReferenceAndFromWalletUserId(request.getUniqueReference(), senderId);
+			transferResponse.setSentTo(existingTransaction.getToWallet().getUser().getUsername());
+			transferResponse.setAmountPaise(existingTransaction.getAmountPaise());
+			transferResponse.setStatus(existingTransaction.getStatus());
+			transferResponse.setMessage(existingTransaction.getMessage());
+			logIdempotentReplay(transaction, senderUsername, request);
 			throw new WalletException(HttpStatus.CONFLICT, transferResponse);
 		}
 		return transferResponse;
@@ -110,5 +131,51 @@ public class TransferService {
 		responseDTO.setResponseObject(transferResponse);
 
 		return responseDTO;
+	}
+
+	private void logIdempotentReplay(Transaction existing, String fromUsername, TransferRequest request) {
+		domainEventLogger.emit(
+				DomainEventLogger.IDEMPOTENT_REPLAY_HIT,
+				DomainEvent.builder()
+						.uniqueReference(request.getUniqueReference())
+						.fromUsername(fromUsername)
+						.toUsername(existing.getToWallet().getUser().getUsername())
+						.amountPaise(existing.getAmountPaise())
+						.status(existing.getStatus())
+						.message(existing.getMessage()));
+	}
+
+	private void logDeclined(TransferRequest request, String fromUsername, Long walletId, String toUsername, String message) {
+		domainEventLogger.emit(
+				DomainEventLogger.DECLINED,
+				DomainEvent.builder()
+						.uniqueReference(request.getUniqueReference())
+						.fromUsername(fromUsername)
+						.toUsername(toUsername)
+						.walletId(walletId)
+						.amountPaise(request.getAmountPaise())
+						.status(TransferStatus.FAILED)
+						.message(message));
+	}
+
+	private void logWalletEntry(String event, TransferRequest request, String fromUsername, Long walletId) {
+		domainEventLogger.emit(
+				event,
+				DomainEvent.builder()
+						.uniqueReference(request.getUniqueReference())
+						.fromUsername(fromUsername)
+						.toUsername(request.getSendTo())
+						.walletId(walletId)
+						.amountPaise(request.getAmountPaise()));
+	}
+
+	private void logTransfer(String event, TransferRequest request, String fromUsername) {
+		domainEventLogger.emit(
+				event,
+				DomainEvent.builder()
+						.uniqueReference(request.getUniqueReference())
+						.fromUsername(fromUsername)
+						.toUsername(request.getSendTo())
+						.amountPaise(request.getAmountPaise()));
 	}
 }
