@@ -105,6 +105,7 @@ public class TransferService {
 			transaction.setToWallet(receiverWallet);
 			transactionSaveHelper.saveAndFlushIsolated(transaction);
 			walletMetrics.incrementTransfersCreated();
+			log.info("Transaction with uniqueReference {} completed.", request.getUniqueReference());
 			logTransfer(DomainEventLogger.TRANSFER_COMPLETED, request, senderUsername);
 		} catch (DataIntegrityViolationException e) {
 			log.error("Transfer already exists for unique_reference: {} for userId: {}", request.getUniqueReference(), senderId);
