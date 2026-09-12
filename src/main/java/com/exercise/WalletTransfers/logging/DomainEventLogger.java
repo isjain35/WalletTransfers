@@ -17,7 +17,7 @@ public class DomainEventLogger {
 	public static final String TRANSFER_CREATED = "transfer created";
 	public static final String TRANSFER_COMPLETED = "transfer completed";
 	public static final String MARKED_FOR_DEBIT = "marked for debit";
-	public static final String MARKED_FOR_CREDIT = "marked for credited";
+	public static final String MARKED_FOR_CREDIT = "marked for credit";
 	public static final String DECLINED = "declined";
 	public static final String IDEMPOTENT_REPLAY_HIT = "idempotent replay hit";
 

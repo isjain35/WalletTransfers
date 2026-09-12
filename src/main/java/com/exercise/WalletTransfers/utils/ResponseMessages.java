@@ -13,5 +13,4 @@ public class ResponseMessages {
     public static final String TRANSFER_FAILED_SENDER_WALLET_NOT_REGISTERED = "Your wallet is not registered";
     public static final String TRANSFER_FAILED_INSUFFICIENT_BALANCE = "Insufficient balance";
     public static final String TRANSFER_NOT_FOUND = "Transfer not found";
-    public static final String TRANSFER_NOT_UNIQUE = "Transfer unique_reference is already present";
 }
