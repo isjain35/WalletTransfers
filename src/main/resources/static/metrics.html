@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Wallet metrics</title>
+	<style>
+		body { font-family: system-ui, sans-serif; margin: 2rem; background: #111; color: #eee; }
+		h1 { font-size: 1.25rem; font-weight: 600; }
+		.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-top: 1.5rem; }
+		.card { background: #1c1c1c; border: 1px solid #333; border-radius: 8px; padding: 1rem; }
+		.label { font-size: 0.8rem; color: #aaa; margin-bottom: 0.35rem; }
+		.value { font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+		.status { margin-top: 1.5rem; font-size: 0.85rem; color: #888; }
+	</style>
+</head>
+<body>
+	<h1>Wallet metrics</h1>
+	<div class="grid">
+		<div class="card"><div class="label">Request rate / sec</div><div class="value" id="requestRatePerSec">—</div></div>
+		<div class="card"><div class="label">Latency p99 (ms)</div><div class="value" id="latencyP99Ms">—</div></div>
+		<div class="card"><div class="label">Error rate (5xx)</div><div class="value" id="errorRate">—</div></div>
+		<div class="card"><div class="label">Transfers created</div><div class="value" id="transfersCreated">—</div></div>
+		<div class="card"><div class="label">Declined insufficient funds</div><div class="value" id="declinedInsufficientFunds">—</div></div>
+		<div class="card"><div class="label">Idempotent replays</div><div class="value" id="idempotentReplays">—</div></div>
+	</div>
+	<p class="status" id="status">Connecting…</p>
+	<script>
+		const fmt = (n, digits) => Number(n).toFixed(digits);
+		async function refresh() {
+			try {
+				const res = await fetch('/metrics');
+				if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
+				const m = await res.json();
+				document.getElementById('requestRatePerSec').textContent = fmt(m.requestRatePerSec, 2);
+				document.getElementById('latencyP99Ms').textContent = fmt(m.latencyP99Ms, 1);
+				document.getElementById('errorRate').textContent = fmt(m.errorRate * 100, 1) + '%';
+				document.getElementById('transfersCreated').textContent = m.transfersCreated;
+				document.getElementById('declinedInsufficientFunds').textContent = m.declinedInsufficientFunds;
+				document.getElementById('idempotentReplays').textContent = m.idempotentReplays;
+				document.getElementById('status').textContent = 'Updated ' + new Date().toLocaleTimeString();
+			} catch (e) {
+				document.getElementById('status').textContent = 'Failed to load /metrics: ' + e.message;
+			}
+		}
+		refresh();
+		setInterval(refresh, 2000);
+	</script>
+</body>
+</html>

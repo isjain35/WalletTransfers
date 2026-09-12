@@ -3,6 +3,7 @@ package com.exercise.WalletTransfers.service;
 import com.exercise.WalletTransfers.dao.WalletDao;
 import com.exercise.WalletTransfers.logging.DomainEvent;
 import com.exercise.WalletTransfers.logging.DomainEventLogger;
+import com.exercise.WalletTransfers.metrics.WalletMetrics;
 import com.exercise.WalletTransfers.model.dto.ResponseDTO;
 import com.exercise.WalletTransfers.model.dto.TransferRequest;
 import com.exercise.WalletTransfers.model.dto.TransferResponse;
@@ -14,8 +15,6 @@ import com.exercise.WalletTransfers.repository.TransactionRepository;
 import com.exercise.WalletTransfers.repository.WalletRepository;
 import com.exercise.WalletTransfers.utils.ResponseMessages;
 import com.exercise.WalletTransfers.utils.TransferStatus;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -37,6 +36,8 @@ public class TransferService {
 	DomainEventLogger domainEventLogger;
 	@Autowired
 	TransactionSaveHelper transactionSaveHelper;
+	@Autowired
+	WalletMetrics walletMetrics;
 
 	@Transactional
 	public ResponseDTO createTransfer(TransferRequest request, User fromUser) {
@@ -88,6 +89,7 @@ public class TransferService {
 			transaction.setMessage(ResponseMessages.TRANSFER_FAILED_INSUFFICIENT_BALANCE);
 			transferResponse.setStatus(transaction.getStatus());
 			transferResponse.setMessage(transaction.getMessage());
+			walletMetrics.incrementDeclinedInsufficientFunds();
 			logDeclined(request, senderUsername, senderWallet.getId(), request.getSendTo(), ResponseMessages.TRANSFER_FAILED_INSUFFICIENT_BALANCE);
 		}
 
@@ -97,6 +99,7 @@ public class TransferService {
 			transaction.setFromWallet(senderWallet);
 			transaction.setToWallet(receiverWallet);
 			transactionSaveHelper.saveAndFlushIsolated(transaction);
+			walletMetrics.incrementTransfersCreated();
 			logTransfer(DomainEventLogger.TRANSFER_COMPLETED, request, senderUsername);
 		} catch (DataIntegrityViolationException e) {
 			log.error("Transfer already exists for unique_reference: {} for userId: {}", request.getUniqueReference(), senderId);
@@ -106,6 +109,7 @@ public class TransferService {
 			transferResponse.setAmountPaise(existingTransaction.getAmountPaise());
 			transferResponse.setStatus(existingTransaction.getStatus());
 			transferResponse.setMessage(existingTransaction.getMessage());
+			walletMetrics.incrementIdempotentReplays();
 			logIdempotentReplay(transaction, senderUsername, request);
 			throw new WalletException(HttpStatus.CONFLICT, transferResponse);
 		}
