@@ -1,0 +1,43 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-create-users-table
+      author: wallet-transfers
+      comment: Create users table with unique username and audit timestamps
+      changes:
+        - createTable:
+            tableName: users
+            columns:
+              - column:
+                  name: id
+                  type: INTEGER
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+                    primaryKeyName: pk_users
+              - column:
+                  name: username
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: password
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMPTZ
+                  defaultValueComputed: NOW()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMPTZ
+                  defaultValueComputed: NOW()
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: users
+            columnNames: username
+            constraintName: uk_users_username

@@ -1,0 +1,55 @@
+databaseChangeLog:
+  - changeSet:
+      id: 002-create-wallets-table
+      author: wallet-transfers
+      comment: Create wallets table linked to users with default balance 0
+      changes:
+        - createTable:
+            tableName: wallets
+            columns:
+              - column:
+                  name: id
+                  type: INTEGER
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+                    primaryKeyName: pk_wallets
+              - column:
+                  name: reference_id
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+              - column:
+                  name: balance
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMPTZ
+                  defaultValueComputed: NOW()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMPTZ
+                  defaultValueComputed: NOW()
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: wallets
+            baseColumnNames: user_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_wallets_user_id
+        - addUniqueConstraint:
+            tableName: wallets
+            columnNames: user_id
+            constraintName: uk_wallets_user_id
