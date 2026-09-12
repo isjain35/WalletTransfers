@@ -39,4 +39,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=4s --start-period=25s --retries=3 \
   CMD wget -qO- http://localhost:8080/actuator/health | grep -q '"status":"UP"' || exit 1
 
-ENTRYPOINT ["sh", "-c", "exec java $APP_OPTS -jar /app/app.jar"]
+ENTRYPOINT ["sh", "-c", "exec java $APP_OPTS -jar /app/app.jar \"$@\"", "--"]
